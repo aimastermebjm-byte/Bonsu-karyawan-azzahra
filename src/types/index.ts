@@ -20,9 +20,11 @@ export interface DailyBonusData {
 }
 
 export interface BonusFormula {
+  id?: string;
   name: string;
   tiers: { min: number; max: number; rate: number }[];
   description: string;
+  isDefault?: boolean;
 }
 
 export type UserRole = 'employee' | 'owner';

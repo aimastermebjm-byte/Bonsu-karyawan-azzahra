@@ -3,9 +3,10 @@ import { Calendar, Package, Plus, Award, TrendingUp, BarChart } from 'lucide-rea
 import { db } from '../lib/firebase';
 import { collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore';
 import { ProductionEntry, DailyBonusData } from '../types';
-import { calculateBonus, formatCurrency, formatDate, bonusFormulas } from '../utils/bonusCalculator';
+import { calculateBonus, formatCurrency, formatDate } from '../utils/bonusCalculator';
 import { useAuth } from '../context/AuthContext';
 import { useFirebase } from '../context/FirebaseContext';
+import { useFormula } from '../context/FormulaContext';
 import BonusPopup from './BonusPopup';
 
 const boxSizes = [
@@ -22,7 +23,7 @@ export default function BonusTab() {
   const [production, setProduction] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [dailyBonusData, setDailyBonusData] = useState<DailyBonusData[]>([]);
-  const [currentFormula, setCurrentFormula] = useState(3);
+  const { formulas, defaultFormula, setDefaultFormula } = useFormula();
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth().toString());
   const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString());
   const [showBonusPopup, setShowBonusPopup] = useState(false);
@@ -30,7 +31,7 @@ export default function BonusTab() {
     bonusAmount: 0,
     totalProduction: 0
   });
-  const [previewFormula, setPreviewFormula] = useState<number | null>(null);
+  const [previewFormulaId, setPreviewFormulaId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isConnected) {
@@ -40,14 +41,15 @@ export default function BonusTab() {
 
   useEffect(() => {
     // Load preview data when preview formula changes
-    if (previewFormula !== null) {
-      loadBonusDataWithFormula(previewFormula);
+    if (previewFormulaId !== null) {
+      const pFormula = formulas.find(f => f.id === previewFormulaId) || null;
+      loadBonusDataWithFormula(pFormula);
     } else {
       loadBonusData();
     }
-  }, [previewFormula]);
+  }, [previewFormulaId, defaultFormula, formulas]);
 
-  const loadBonusDataWithFormula = async (formulaToUse: number) => {
+  const loadBonusDataWithFormula = async (formulaToUse: any) => {
     try {
       const q = query(collection(db, "produksi"), orderBy("createdAt", "desc"));
       const querySnapshot = await getDocs(q);
@@ -91,21 +93,13 @@ export default function BonusTab() {
   };
 
   const loadBonusData = async () => {
-    const defaultFormula = getDefaultFormula();
     await loadBonusDataWithFormula(defaultFormula);
   };
 
-  const getDefaultFormula = () => {
-    const saved = localStorage.getItem('defaultBonusFormula');
-    const defaultFormula = saved ? parseInt(saved) : 3;
-    return defaultFormula;
-  };
-
-  const makeDefault = (formula: number) => {
-    localStorage.setItem('defaultBonusFormula', formula.toString());
-    setPreviewFormula(null); // Exit preview mode
-    loadBonusData(); // Reload with new default
-    alert(`✅ Formula ${formula} berhasil dijadikan default!`);
+  const makeDefault = async (formulaId: string) => {
+    await setDefaultFormula(formulaId);
+    setPreviewFormulaId(null); // Exit preview mode
+    alert(`✅ Formula berhasil dijadikan default!`);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -153,8 +147,7 @@ export default function BonusTab() {
       });
 
       // Show bonus popup
-      const currentDefaultFormula = getDefaultFormula();
-      const dailyBonus = calculateBonus(totalDailyProduction, currentDefaultFormula);
+      const dailyBonus = calculateBonus(totalDailyProduction, defaultFormula);
       setBonusPopupData({
         bonusAmount: dailyBonus.total,
         totalProduction: totalDailyProduction
@@ -183,8 +176,8 @@ export default function BonusTab() {
   const totalProduction = dailyBonusData.reduce((sum, entry) => sum + entry.totalProduction, 0);
   const totalBonus = dailyBonusData.reduce((sum, entry) => sum + entry.bonus.total, 0);
 
-  const currentDisplayFormula = previewFormula || getDefaultFormula();
-  const isPreviewMode = previewFormula !== null;
+  const currentDisplayFormula = previewFormulaId ? formulas.find(f => f.id === previewFormulaId) : defaultFormula;
+  const isPreviewMode = previewFormulaId !== null;
 
   return (
     <div className="space-y-6">
@@ -200,8 +193,8 @@ export default function BonusTab() {
           }`}>
             <Award className="w-5 h-5" />
             <span>
-              {isPreviewMode ? `Preview Formula ${currentDisplayFormula}` : `Formula Bonus Aktif (${currentDisplayFormula})`}
-              {!isPreviewMode && (
+              {isPreviewMode ? `Preview Formula ${currentDisplayFormula?.name}` : `Formula Bonus Aktif (${currentDisplayFormula?.name || 'Tidak ada'})`}
+              {!isPreviewMode && currentDisplayFormula && (
                 <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">DEFAULT</span>
               )}
             </span>
@@ -211,28 +204,29 @@ export default function BonusTab() {
               <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto">
                 <label className="text-sm font-medium text-gray-700">Pilih Formula:</label>
                 <select
-                  value={currentDisplayFormula}
+                  value={currentDisplayFormula?.id || ''}
                   onChange={(e) => {
-                    const selectedFormula = parseInt(e.target.value);
-                    const defaultFormula = getDefaultFormula();
+                    const selectedFormulaId = e.target.value;
                     
-                    if (selectedFormula === defaultFormula) {
-                      setPreviewFormula(null); // Exit preview mode
+                    if (selectedFormulaId === defaultFormula?.id) {
+                      setPreviewFormulaId(null); // Exit preview mode
                     } else {
-                      setPreviewFormula(selectedFormula); // Enter preview mode
+                      setPreviewFormulaId(selectedFormulaId); // Enter preview mode
                     }
                   }}
                   className="w-full sm:w-auto px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  {Object.entries(bonusFormulas).map(([key, formula]) => (
-                    <option key={key} value={key}>{formula.name}</option>
+                  <option value="" disabled>Pilih Formula</option>
+                  {formulas.map((formula) => (
+                    <option key={formula.id} value={formula.id}>{formula.name}</option>
                   ))}
                 </select>
               </div>
               
-              {isPreviewMode && (
+              
+              {isPreviewMode && currentDisplayFormula?.id && (
                 <button
-                  onClick={() => makeDefault(currentDisplayFormula)}
+                  onClick={() => makeDefault(currentDisplayFormula.id!)}
                   className="w-full sm:w-auto px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium whitespace-nowrap"
                 >
                   Tetapkan Default
@@ -254,13 +248,13 @@ export default function BonusTab() {
           isPreviewMode ? 'border-orange-200' : 'border-blue-200'
         }`}>
           <div className="space-y-3">
-            {bonusFormulas[currentDisplayFormula].description.split('\n').map((line, index) => (
+            {currentDisplayFormula?.description?.split('\n').map((line, index) => (
               <div key={index} className={`text-sm font-medium p-2 rounded-md ${
                 isPreviewMode ? 'text-orange-700 bg-orange-50' : 'text-blue-700 bg-blue-50'
               }`}>
                 {line}
               </div>
-            ))}
+            )) || <div className="text-gray-500 text-sm">Belum ada deskripsi formula.</div>}
           </div>
         </div>
       </div>

@@ -44,27 +44,17 @@ export const bonusFormulas: Record<number, BonusFormula> = {
   }
 };
 
-export function calculateBonus(production: number, formulaNumber: number = 3): BonusCalculation {
-  const formula = bonusFormulas[formulaNumber];
+export function calculateBonus(production: number, formula: BonusFormula | null): BonusCalculation {
   let tier1 = 0, tier2 = 0, tier3 = 0;
+
+  if (!formula || !formula.tiers || formula.tiers.length === 0) {
+    return { tier1, tier2, tier3, total: 0 };
+  }
   
-  // Check minimum thresholds for each formula
-  if (formulaNumber === 1 || formulaNumber === 2) {
-    if (production <= 300) {
-      return { tier1: 0, tier2: 0, tier3: 0, total: 0 };
-    }
-  } else if (formulaNumber === 3) {
-    if (production <= 325) {
-      return { tier1: 0, tier2: 0, tier3: 0, total: 0 };
-    }
-  } else if (formulaNumber === 4) {
-    if (production <= 300) {
-      return { tier1: 0, tier2: 0, tier3: 0, total: 0 };
-    }
-  } else if (formulaNumber === 5) {
-    if (production <= 325) {
-      return { tier1: 0, tier2: 0, tier3: 0, total: 0 };
-    }
+  // Get global min threshold from the lowest tier min
+  const minThreshold = Math.min(...formula.tiers.map(t => t.min));
+  if (production < minThreshold) {
+    return { tier1: 0, tier2: 0, tier3: 0, total: 0 };
   }
 
   formula.tiers.forEach((tier, index) => {
@@ -76,6 +66,7 @@ export function calculateBonus(production: number, formulaNumber: number = 3): B
       if (index === 0) tier1 = bonus;
       else if (index === 1) tier2 = bonus;
       else if (index === 2) tier3 = bonus;
+      // If there are more tiers, we'd need to expand BonusCalculation, but we'll stick to 3 for now.
     }
   });
   

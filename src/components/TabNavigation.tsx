@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, Package, DollarSign } from 'lucide-react';
+import { BarChart3, Package, DollarSign, Settings } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface Tab {
@@ -30,6 +30,12 @@ const tabs: Tab[] = [
     id: 'salary',
     name: 'Gaji Karyawan',
     icon: <DollarSign className="w-5 h-5" />,
+    requiresOwner: true,
+  },
+  {
+    id: 'formulas',
+    name: 'Atur Formula',
+    icon: <Settings className="w-5 h-5" />,
     requiresOwner: true,
   },
 ];

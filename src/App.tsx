@@ -7,6 +7,8 @@ import TabNavigation from './components/TabNavigation';
 import BonusTab from './components/BonusTab';
 import ProductionTab from './components/ProductionTab';
 import SalaryTab from './components/SalaryTab';
+import FormulaManager from './components/FormulaManager';
+import { FormulaProvider } from './context/FormulaContext';
 
 function AppContent() {
   const { user, isLoading } = useAuth();
@@ -32,6 +34,8 @@ function AppContent() {
         return user.role === 'owner' ? <ProductionTab /> : <BonusTab />;
       case 'salary':
         return user.role === 'owner' ? <SalaryTab /> : <BonusTab />;
+      case 'formulas':
+        return user.role === 'owner' ? <FormulaManager /> : <BonusTab />;
       default:
         return <BonusTab />;
     }
@@ -53,7 +57,9 @@ function App() {
   return (
     <AuthProvider>
       <FirebaseProvider>
-        <AppContent />
+        <FormulaProvider>
+          <AppContent />
+        </FormulaProvider>
       </FirebaseProvider>
     </AuthProvider>
   );
