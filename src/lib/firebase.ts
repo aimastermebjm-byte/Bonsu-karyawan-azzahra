@@ -1,7 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
-
+import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 // Firebase config - Bonus Karyawan Azzahra
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDvYlTZ89g5tAktpLgTxbGki9OFufus_ok",
@@ -22,3 +21,5 @@ console.log('Firebase config loaded:', {
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
+export const auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
