@@ -19,13 +19,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
-        // Here you can set the role based on the email. 
-        // For example, if owner email is 'owner@gmail.com', set role to 'owner'
-        // Otherwise, default to 'employee'
         const email = firebaseUser.email || '';
         let role: UserRole = 'employee';
         
-        // Example check: if (email === 'admin@azzahra.com') role = 'owner';
+        // Cek apakah email yang login adalah email owner
+        const ownerEmail = import.meta.env.VITE_OWNER_EMAIL;
+        
+        if (ownerEmail && email.toLowerCase() === ownerEmail.toLowerCase()) {
+          role = 'owner';
+        }
         
         setUser({
           name: firebaseUser.displayName || email.split('@')[0] || 'User',
