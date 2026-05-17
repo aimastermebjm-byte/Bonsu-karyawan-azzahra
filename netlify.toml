@@ -1,0 +1,22 @@
+[build]
+  publish = "dist"
+  command = "npx update-browserslist-db@latest && npm run build"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Environment variables untuk production
+# PENTING: Set manual di Netlify Dashboard → Site Settings → Environment Variables
+[context.production.environment]
+  VITE_FIREBASE_API_KEY = ""
+  VITE_FIREBASE_AUTH_DOMAIN = ""
+  VITE_FIREBASE_PROJECT_ID = ""
+  VITE_FIREBASE_STORAGE_BUCKET = ""
+  VITE_FIREBASE_MESSAGING_SENDER_ID = ""
+  VITE_FIREBASE_APP_ID = ""
+  VITE_FIREBASE_MEASUREMENT_ID = ""
