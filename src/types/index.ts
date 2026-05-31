@@ -3,6 +3,8 @@ export interface ProductionEntry {
   date: string;
   boxSize: string;
   production: number;
+  karyawanId: string;
+  karyawanNama: string;
   createdAt: string;
 }
 
@@ -27,9 +29,19 @@ export interface BonusFormula {
   isDefault?: boolean;
 }
 
+export interface Employee {
+  id?: string;
+  nama: string;
+  password: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
 export type UserRole = 'employee' | 'owner';
 
 export interface User {
   role: UserRole;
   name: string;
+  karyawanId?: string;
+  karyawanNama?: string;
 }

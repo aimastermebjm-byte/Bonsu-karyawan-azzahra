@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Package, CreditCard as Edit3, Trash2, Filter, Save, X, Calendar } from 'lucide-react';
+import { Package, CreditCard as Edit3, Trash2, Filter, Save, X, Calendar, Users } from 'lucide-react';
 import { db } from '../lib/firebase';
-import { collection, getDocs, deleteDoc, doc, query, orderBy, updateDoc } from 'firebase/firestore';
-import { ProductionEntry } from '../types';
+import { collection, getDocs, deleteDoc, doc, query, orderBy, updateDoc, where } from 'firebase/firestore';
+import { ProductionEntry, Employee } from '../types';
 import { formatDate } from '../utils/bonusCalculator';
 import { useFirebase } from '../context/FirebaseContext';
 
@@ -12,13 +12,11 @@ export default function ProductionTab() {
   const [filteredData, setFilteredData] = useState<ProductionEntry[]>([]);
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth().toString());
   const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString());
+  const [filterKaryawanId, setFilterKaryawanId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({
-    date: '',
-    boxSize: '',
-    production: ''
-  });
+  const [editForm, setEditForm] = useState({ date: '', boxSize: '', production: '' });
+  const [employees, setEmployees] = useState<Employee[]>([]);
 
   const boxSizes = [
     '10.10.8', '11.11.5', '12.12.10', '12.12.8', '12.6.6',
@@ -29,12 +27,23 @@ export default function ProductionTab() {
   useEffect(() => {
     if (isConnected) {
       loadProductionData();
+      loadEmployees();
     }
   }, [isConnected]);
 
   useEffect(() => {
     applyFilters();
-  }, [productionData, filterMonth, filterYear]);
+  }, [productionData, filterMonth, filterYear, filterKaryawanId]);
+
+  const loadEmployees = async () => {
+    try {
+      const q = query(collection(db, 'karyawan'), orderBy('nama'));
+      const snapshot = await getDocs(q);
+      setEmployees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee)));
+    } catch (error) {
+      console.error('Error loading employees:', error);
+    }
+  };
 
   const loadProductionData = async () => {
     setIsLoading(true);
@@ -59,12 +68,16 @@ export default function ProductionTab() {
     let filtered = productionData;
     
     if (filterMonth !== "" || filterYear !== "") {
-      filtered = productionData.filter(entry => {
+      filtered = filtered.filter(entry => {
         const entryDate = new Date(entry.date);
         const monthMatch = filterMonth === "" || entryDate.getMonth() === parseInt(filterMonth);
         const yearMatch = filterYear === "" || entryDate.getFullYear() === parseInt(filterYear);
         return monthMatch && yearMatch;
       });
+    }
+
+    if (filterKaryawanId) {
+      filtered = filtered.filter(entry => entry.karyawanId === filterKaryawanId);
     }
     
     setFilteredData(filtered);
@@ -126,203 +139,164 @@ export default function ProductionTab() {
   const totalBoxes = filteredData.reduce((sum, entry) => sum + entry.production, 0);
 
   return (
-    <div className="space-y-6">
+    <div className="content-section">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-800 flex items-center space-x-2">
+      <div className="section-header">
+        <h2 className="section-title">
           <Package className="w-6 h-6" />
           <span>Data Produksi</span>
         </h2>
       </div>
 
-      {/* Filters & Statistics */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Filters */}
-        <div className="lg:col-span-1">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-            <h4 className="font-medium text-gray-800 mb-3 flex items-center space-x-2">
-              <Filter className="w-4 h-4" />
-              <span>Filter Data</span>
-            </h4>
-            <div className="space-y-3">
-              <select
-                value={filterMonth}
-                onChange={(e) => setFilterMonth(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
-              >
-                <option value="">Semua Bulan</option>
-                {Array.from({length: 12}, (_, i) => (
-                  <option key={i} value={i}>
-                    {new Date(0, i).toLocaleDateString('id-ID', { month: 'long' })}
-                  </option>
-                ))}
-              </select>
-              
-              <select
-                value={filterYear}
-                onChange={(e) => setFilterYear(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
-              >
-                <option value="">Semua Tahun</option>
-                {Array.from({length: 10}, (_, i) => {
-                  const year = new Date().getFullYear() - 2 + i;
-                  return <option key={year} value={year}>{year}</option>;
-                })}
-              </select>
-            </div>
+      {/* Filters */}
+      <div className="card animate-in">
+        <h3 className="card-title">
+          <Filter className="w-5 h-5" />
+          <span>Filter Data</span>
+        </h3>
+        <div className="form-stack">
+          <div className="input-group">
+            <label className="input-label">
+              <Users className="input-icon" />
+              Karyawan
+            </label>
+            <select
+              value={filterKaryawanId}
+              onChange={(e) => setFilterKaryawanId(e.target.value)}
+              className="input-field"
+            >
+              <option value="">Semua Karyawan</option>
+              {employees.map(emp => (
+                <option key={emp.id} value={emp.id}>{emp.nama}</option>
+              ))}
+            </select>
           </div>
-        </div>
-
-        {/* Statistics */}
-        <div className="lg:col-span-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl p-4">
-              <div className="flex items-center space-x-3">
-                <Package className="w-8 h-8" />
-                <div>
-                  <p className="text-2xl font-bold">{totalBoxTypes}</p>
-                  <p className="text-orange-100">Jenis Kardus</p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl p-4">
-              <div className="flex items-center space-x-3">
-                <Package className="w-8 h-8" />
-                <div>
-                  <p className="text-2xl font-bold">{totalBoxes.toLocaleString()}</p>
-                  <p className="text-blue-100">Total Kardus</p>
-                </div>
-              </div>
-            </div>
+          <div className="form-row">
+            <select
+              value={filterMonth}
+              onChange={(e) => setFilterMonth(e.target.value)}
+              className="input-field"
+            >
+              <option value="">Semua Bulan</option>
+              {Array.from({length: 12}, (_, i) => (
+                <option key={i} value={i}>
+                  {new Date(0, i).toLocaleDateString('id-ID', { month: 'long' })}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filterYear}
+              onChange={(e) => setFilterYear(e.target.value)}
+              className="input-field"
+            >
+              <option value="">Semua Tahun</option>
+              {Array.from({length: 10}, (_, i) => {
+                const year = new Date().getFullYear() - 2 + i;
+                return <option key={year} value={year}>{year}</option>;
+              })}
+            </select>
           </div>
         </div>
       </div>
 
-      {/* Production Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-800">Data Produksi Detail</h3>
+      {/* Statistics */}
+      <div className="stats-row">
+        <div className="stat-card stat-orange">
+          <Package className="w-6 h-6" />
+          <div>
+            <p className="stat-value">{totalBoxTypes}</p>
+            <p className="stat-label">Jenis Kardus</p>
+          </div>
         </div>
+        <div className="stat-card stat-blue">
+          <Package className="w-6 h-6" />
+          <div>
+            <p className="stat-value">{totalBoxes.toLocaleString()}</p>
+            <p className="stat-label">Total Kardus</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Production Data - Card Layout */}
+      <div className="card animate-in">
+        <h3 className="card-title">Data Produksi Detail</h3>
         
-        <div className="overflow-x-auto">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <span className="ml-2 text-gray-600">Memuat data...</span>
-            </div>
-          ) : filteredData.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <Package className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-              <p>Belum ada data produksi</p>
-            </div>
-          ) : (
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Tanggal
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ukuran Kardus
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Jumlah
-                  </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Aksi
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredData.map((entry) => (
-                  <tr key={entry.id} className={`transition-colors ${editingId === entry.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {editingId === entry.id ? (
-                        <input
-                          type="date"
-                          value={editForm.date}
-                          onChange={(e) => setEditForm({...editForm, date: e.target.value})}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                      ) : (
-                        formatDate(entry.date)
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {editingId === entry.id ? (
-                        <select
-                          value={editForm.boxSize}
-                          onChange={(e) => setEditForm({...editForm, boxSize: e.target.value})}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="">Pilih Ukuran</option>
-                          {boxSizes.map(size => (
-                            <option key={size} value={size}>{size}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {entry.boxSize}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-right text-gray-900">
-                      {editingId === entry.id ? (
-                        <input
-                          type="number"
-                          value={editForm.production}
-                          onChange={(e) => setEditForm({...editForm, production: e.target.value})}
-                          min="1"
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-right"
-                        />
-                      ) : (
-                        `${entry.production.toLocaleString()} pcs`
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      {editingId === entry.id ? (
-                        <div className="flex items-center justify-center space-x-2">
-                          <button
-                            onClick={handleSaveEdit}
-                            className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                            title="Simpan"
-                          >
-                            <Save className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={handleCancelEdit}
-                            className="p-1.5 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
-                            title="Batal"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-center space-x-2">
-                          <button
-                            onClick={() => handleEdit(entry)}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Edit"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(entry.id)}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Hapus"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+        {isLoading ? (
+          <div className="loading-state">
+            <div className="spinner-lg" />
+            <span>Memuat data...</span>
+          </div>
+        ) : filteredData.length === 0 ? (
+          <div className="empty-state">
+            <Package className="w-12 h-12" />
+            <p>Belum ada data produksi</p>
+          </div>
+        ) : (
+          <div className="production-list">
+            {filteredData.map((entry) => (
+              <div key={entry.id} className={`production-item ${editingId === entry.id ? 'editing' : ''}`}>
+                {editingId === entry.id ? (
+                  <div className="production-edit-form">
+                    <input
+                      type="date"
+                      value={editForm.date}
+                      onChange={(e) => setEditForm({...editForm, date: e.target.value})}
+                      className="input-field"
+                    />
+                    <select
+                      value={editForm.boxSize}
+                      onChange={(e) => setEditForm({...editForm, boxSize: e.target.value})}
+                      className="input-field"
+                    >
+                      <option value="">Pilih Ukuran</option>
+                      {boxSizes.map(size => (
+                        <option key={size} value={size}>{size}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      value={editForm.production}
+                      onChange={(e) => setEditForm({...editForm, production: e.target.value})}
+                      min="1"
+                      className="input-field"
+                    />
+                    <div className="production-edit-actions">
+                      <button onClick={handleSaveEdit} className="action-btn action-success">
+                        <Save className="w-4 h-4" /> Simpan
+                      </button>
+                      <button onClick={handleCancelEdit} className="action-btn">
+                        <X className="w-4 h-4" /> Batal
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="production-item-content">
+                      <div className="production-item-top">
+                        <span className="production-date">{formatDate(entry.date)}</span>
+                        {entry.karyawanNama && (
+                          <span className="production-karyawan">{entry.karyawanNama}</span>
+                        )}
+                      </div>
+                      <div className="production-item-bottom">
+                        <span className="production-box-badge">{entry.boxSize}</span>
+                        <span className="production-qty">{entry.production.toLocaleString()} pcs</span>
+                      </div>
+                    </div>
+                    <div className="production-item-actions">
+                      <button onClick={() => handleEdit(entry)} className="action-btn action-edit" title="Edit">
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleDelete(entry.id)} className="action-btn action-danger" title="Hapus">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

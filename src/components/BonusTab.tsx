@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Package, Plus, Award, TrendingUp, BarChart } from 'lucide-react';
+import { Calendar, Package, Plus, Award, TrendingUp, BarChart, Users } from 'lucide-react';
 import { db } from '../lib/firebase';
-import { collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore';
-import { ProductionEntry, DailyBonusData } from '../types';
+import { collection, addDoc, getDocs, query, orderBy, where } from 'firebase/firestore';
+import { ProductionEntry, DailyBonusData, Employee } from '../types';
 import { calculateBonus, formatCurrency, formatDate } from '../utils/bonusCalculator';
 import { useAuth } from '../context/AuthContext';
 import { useFirebase } from '../context/FirebaseContext';
@@ -27,20 +27,29 @@ export default function BonusTab() {
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth().toString());
   const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString());
   const [showBonusPopup, setShowBonusPopup] = useState(false);
-  const [bonusPopupData, setBonusPopupData] = useState({
-    bonusAmount: 0,
-    totalProduction: 0
-  });
+  const [bonusPopupData, setBonusPopupData] = useState({ bonusAmount: 0, totalProduction: 0 });
   const [previewFormulaId, setPreviewFormulaId] = useState<string | null>(null);
+
+  // Owner: pilih karyawan
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [selectedKaryawanId, setSelectedKaryawanId] = useState<string>('');
+
+  const isOwner = user?.role === 'owner';
+  const activeKaryawanId = isOwner ? selectedKaryawanId : user?.karyawanId || '';
+
+  useEffect(() => {
+    if (isOwner && isConnected) {
+      loadEmployees();
+    }
+  }, [isOwner, isConnected]);
 
   useEffect(() => {
     if (isConnected) {
       loadBonusData();
     }
-  }, [isConnected, filterMonth, filterYear]);
+  }, [isConnected, filterMonth, filterYear, activeKaryawanId]);
 
   useEffect(() => {
-    // Load preview data when preview formula changes
     if (previewFormulaId !== null) {
       const pFormula = formulas.find(f => f.id === previewFormulaId) || null;
       loadBonusDataWithFormula(pFormula);
@@ -49,9 +58,39 @@ export default function BonusTab() {
     }
   }, [previewFormulaId, defaultFormula, formulas]);
 
+  const loadEmployees = async () => {
+    try {
+      const q = query(collection(db, 'karyawan'), orderBy('nama'));
+      const snapshot = await getDocs(q);
+      const data: Employee[] = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Employee));
+      setEmployees(data.filter(e => e.isActive));
+    } catch (error) {
+      console.error('Error loading employees:', error);
+    }
+  };
+
   const loadBonusDataWithFormula = async (formulaToUse: any) => {
     try {
-      const q = query(collection(db, "produksi"), orderBy("createdAt", "desc"));
+      let q;
+      if (activeKaryawanId) {
+        q = query(
+          collection(db, "produksi"),
+          where("karyawanId", "==", activeKaryawanId),
+          orderBy("createdAt", "desc")
+        );
+      } else if (!isOwner && user?.karyawanId) {
+        q = query(
+          collection(db, "produksi"),
+          where("karyawanId", "==", user.karyawanId),
+          orderBy("createdAt", "desc")
+        );
+      } else {
+        q = query(collection(db, "produksi"), orderBy("createdAt", "desc"));
+      }
+
       const querySnapshot = await getDocs(q);
       const data: ProductionEntry[] = [];
       
@@ -98,14 +137,12 @@ export default function BonusTab() {
 
   const makeDefault = async (formulaId: string) => {
     await setDefaultFormula(formulaId);
-    setPreviewFormulaId(null); // Exit preview mode
+    setPreviewFormulaId(null);
     alert(`✅ Formula berhasil dijadikan default!`);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    console.log('Form submitted:', { date, boxSize, production, isConnected });
     
     if (!isConnected) {
       alert('❌ Tidak terhubung ke database!');
@@ -121,28 +158,48 @@ export default function BonusTab() {
       alert('⚠️ Jumlah produksi harus lebih dari 0!');
       return;
     }
+
+    // Owner harus pilih karyawan
+    if (isOwner && !selectedKaryawanId) {
+      alert('⚠️ Pilih karyawan terlebih dahulu!');
+      return;
+    }
+
+    const karyawanId = isOwner ? selectedKaryawanId : user?.karyawanId || '';
+    const karyawanNama = isOwner 
+      ? employees.find(e => e.id === selectedKaryawanId)?.nama || ''
+      : user?.karyawanNama || user?.name || '';
+
+    if (!karyawanId) {
+      alert('⚠️ Data karyawan tidak valid!');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      // Calculate total production for the day
       const today = date;
       let totalDailyProduction = parseInt(production);
       
-      // Get existing data for the same day
-      const q = query(collection(db, "produksi"), orderBy("createdAt", "desc"));
+      // Get existing data for the same day + same karyawan
+      const q = query(
+        collection(db, "produksi"),
+        where("karyawanId", "==", karyawanId),
+        where("date", "==", today)
+      );
       const querySnapshot = await getDocs(q);
       
       querySnapshot.forEach((doc) => {
         const data = doc.data() as ProductionEntry;
-        if (data.date === today) {
-          totalDailyProduction += data.production;
-        }
+        totalDailyProduction += data.production;
       });
 
       await addDoc(collection(db, "produksi"), {
         date,
         boxSize,
         production: parseInt(production),
+        karyawanId,
+        karyawanNama,
         createdAt: new Date().toISOString()
       });
 
@@ -154,16 +211,11 @@ export default function BonusTab() {
       });
       setShowBonusPopup(true);
       
-      // Reset form
       setBoxSize('');
       setProduction('');
       
-      // Reload data
       await loadBonusData();
-      
-      console.log('Data berhasil disimpan');
-      
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding production:", error);
       alert(`❌ Gagal menyimpan data: ${error.message}`);
     } finally {
@@ -180,125 +232,119 @@ export default function BonusTab() {
   const isPreviewMode = previewFormulaId !== null;
 
   return (
-    <div className="space-y-6">
-      {/* Formula Info */}
-      <div className={`border rounded-xl p-6 ${
-        isPreviewMode
-          ? 'bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200'
-          : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'
-      }`}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className={`text-lg font-semibold flex items-center space-x-2 ${
-            isPreviewMode ? 'text-orange-800' : 'text-blue-800'
-          }`}>
-            <Award className="w-5 h-5" />
-            <span>
-              {isPreviewMode ? `Preview Formula ${currentDisplayFormula?.name}` : `Formula Bonus Aktif (${currentDisplayFormula?.name || 'Tidak ada'})`}
-              {!isPreviewMode && currentDisplayFormula && (
-                <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">DEFAULT</span>
-              )}
-            </span>
+    <div className="content-section">
+      {/* Owner: Pilih Karyawan */}
+      {isOwner && (
+        <div className="card animate-in">
+          <h3 className="card-title">
+            <Users className="w-5 h-5" />
+            <span>Pilih Karyawan</span>
           </h3>
-          {user?.role === 'owner' && (
-            <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-3">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto">
-                <label className="text-sm font-medium text-gray-700">Pilih Formula:</label>
-                <select
-                  value={currentDisplayFormula?.id || ''}
-                  onChange={(e) => {
-                    const selectedFormulaId = e.target.value;
-                    
-                    if (selectedFormulaId === defaultFormula?.id) {
-                      setPreviewFormulaId(null); // Exit preview mode
-                    } else {
-                      setPreviewFormulaId(selectedFormulaId); // Enter preview mode
-                    }
-                  }}
-                  className="w-full sm:w-auto px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="" disabled>Pilih Formula</option>
-                  {formulas.map((formula) => (
-                    <option key={formula.id} value={formula.id}>{formula.name}</option>
-                  ))}
-                </select>
-              </div>
-              
-              
-              {isPreviewMode && currentDisplayFormula?.id && (
-                <button
-                  onClick={() => makeDefault(currentDisplayFormula.id!)}
-                  className="w-full sm:w-auto px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium whitespace-nowrap"
-                >
-                  Tetapkan Default
-                </button>
-              )}
+          <select
+            value={selectedKaryawanId}
+            onChange={(e) => setSelectedKaryawanId(e.target.value)}
+            className="input-field"
+          >
+            <option value="">-- Semua Karyawan --</option>
+            {employees.map(emp => (
+              <option key={emp.id} value={emp.id}>{emp.nama}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Formula Info - Collapsible on mobile */}
+      {isOwner && (
+        <div className={`card animate-in ${isPreviewMode ? 'card-warning' : 'card-info'}`}>
+          <div className="card-title-row">
+            <h3 className={`card-title ${isPreviewMode ? 'text-orange' : 'text-indigo'}`}>
+              <Award className="w-5 h-5" />
+              <span>
+                {isPreviewMode 
+                  ? `Preview: ${currentDisplayFormula?.name}` 
+                  : `Formula Aktif: ${currentDisplayFormula?.name || 'Tidak ada'}`}
+              </span>
+            </h3>
+          </div>
+          
+          <div className="formula-controls">
+            <div className="input-group">
+              <label className="input-label">Pilih Formula:</label>
+              <select
+                value={currentDisplayFormula?.id || ''}
+                onChange={(e) => {
+                  const selectedFormulaId = e.target.value;
+                  if (selectedFormulaId === defaultFormula?.id) {
+                    setPreviewFormulaId(null);
+                  } else {
+                    setPreviewFormulaId(selectedFormulaId);
+                  }
+                }}
+                className="input-field"
+              >
+                <option value="" disabled>Pilih Formula</option>
+                {formulas.map((formula) => (
+                  <option key={formula.id} value={formula.id}>{formula.name}</option>
+                ))}
+              </select>
+            </div>
+            
+            {isPreviewMode && currentDisplayFormula?.id && (
+              <button
+                onClick={() => makeDefault(currentDisplayFormula.id!)}
+                className="btn-success"
+              >
+                Tetapkan Default
+              </button>
+            )}
+          </div>
+
+          {isPreviewMode && (
+            <div className="alert-warning">
+              ⚠️ Mode Preview — klik "Tetapkan Default" untuk menggunakan formula ini.
             </div>
           )}
-        </div>
-        
-        {isPreviewMode && (
-          <div className="mb-4 p-3 bg-yellow-100 border border-yellow-300 rounded-lg">
-            <p className="text-yellow-800 text-sm font-medium">
-              ⚠️ Mode Preview: Perhitungan ini hanya untuk melihat hasil. Klik "Tetapkan Default" untuk menggunakan formula ini secara permanen.
-            </p>
-          </div>
-        )}
-        
-        <div className={`bg-white p-4 rounded-lg border ${
-          isPreviewMode ? 'border-orange-200' : 'border-blue-200'
-        }`}>
-          <div className="space-y-3">
+          
+          <div className="formula-desc">
             {currentDisplayFormula?.description?.split('\n').map((line, index) => (
-              <div key={index} className={`text-sm font-medium p-2 rounded-md ${
-                isPreviewMode ? 'text-orange-700 bg-orange-50' : 'text-blue-700 bg-blue-50'
-              }`}>
-                {line}
-              </div>
-            )) || <div className="text-gray-500 text-sm">Belum ada deskripsi formula.</div>}
+              <div key={index} className="formula-line">{line}</div>
+            )) || <div className="text-muted">Belum ada deskripsi formula.</div>}
           </div>
         </div>
-      </div>
+      )}
 
       {/* Input Form */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center space-x-2">
+      <div className="card animate-in">
+        <h3 className="card-title">
           <Plus className="w-5 h-5" />
           <span>Tambah Data Produksi</span>
         </h3>
         
-        {/* Connection Status Debug */}
-        <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-          <p className="text-sm text-gray-600">
-            Status: {isConnected ? '✅ Terhubung' : '❌ Tidak Terhubung'} | 
-            Loading: {isLoading ? 'Ya' : 'Tidak'}
-          </p>
-        </div>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <Calendar className="inline w-4 h-4 mr-1" />
-                Tanggal Produksi
-              </label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <Package className="inline w-4 h-4 mr-1" />
+        <form onSubmit={handleSubmit} className="form-stack">
+          <div className="input-group">
+            <label className="input-label">
+              <Calendar className="input-icon" />
+              Tanggal
+            </label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="input-field"
+              required
+            />
+          </div>
+          
+          <div className="form-row">
+            <div className="input-group">
+              <label className="input-label">
+                <Package className="input-icon" />
                 Ukuran Kardus
               </label>
               <select
                 value={boxSize}
                 onChange={(e) => setBoxSize(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="input-field"
                 required
               >
                 <option value="">Pilih Ukuran</option>
@@ -308,18 +354,18 @@ export default function BonusTab() {
               </select>
             </div>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <BarChart className="inline w-4 h-4 mr-1" />
-                Jumlah Produksi
+            <div className="input-group">
+              <label className="input-label">
+                <BarChart className="input-icon" />
+                Jumlah
               </label>
               <input
                 type="number"
                 value={production}
                 onChange={(e) => setProduction(e.target.value)}
-                placeholder="Masukkan jumlah"
+                placeholder="Jumlah produksi"
                 min="1"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="input-field"
                 required
               />
             </div>
@@ -328,154 +374,117 @@ export default function BonusTab() {
           <button
             type="submit"
             disabled={isLoading || !isConnected}
-            className={`w-full py-3 px-4 rounded-lg font-medium focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 ${
-              isLoading || !isConnected
-                ? 'bg-gray-400 text-gray-700 cursor-not-allowed opacity-50'
-                : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700 cursor-pointer'
-            }`}
+            className={`btn-primary ${(isLoading || !isConnected) ? 'btn-disabled' : ''}`}
           >
             {isLoading ? (
-              <div className="flex items-center justify-center space-x-2">
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Menyimpan...</span>
-              </div>
+              <div className="btn-loading"><div className="spinner" /><span>Menyimpan...</span></div>
             ) : !isConnected ? (
-              <span className="flex items-center justify-center space-x-2">
-                <span>❌ Tidak Terhubung</span>
-              </span>
+              <div className="btn-content"><span>❌ Tidak Terhubung</span></div>
             ) : (
-              <span className="flex items-center justify-center space-x-2">
-                <Plus className="w-5 h-5" />
-                <span>Tambah Data</span>
-              </span>
+              <div className="btn-content"><Plus className="w-5 h-5" /><span>Tambah Data</span></div>
             )}
           </button>
         </form>
       </div>
 
-      {/* Filter & Statistics */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Filters */}
-        <div className="lg:col-span-1">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-            <h4 className="font-medium text-gray-800 mb-3">Filter Data</h4>
-            <div className="space-y-3">
-              <select
-                value={filterMonth}
-                onChange={(e) => setFilterMonth(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
-              >
-                <option value="">Semua Bulan</option>
-                {Array.from({length: 12}, (_, i) => (
-                  <option key={i} value={i}>
-                    {new Date(0, i).toLocaleDateString('id-ID', { month: 'long' })}
-                  </option>
-                ))}
-              </select>
-              
-              <select
-                value={filterYear}
-                onChange={(e) => setFilterYear(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
-              >
-                <option value="">Semua Tahun</option>
-                {Array.from({length: 10}, (_, i) => {
-                  const year = new Date().getFullYear() - 2 + i;
-                  return <option key={year} value={year}>{year}</option>;
-                })}
-              </select>
-            </div>
+      {/* Filter */}
+      <div className="card animate-in">
+        <h3 className="card-title">Filter Data</h3>
+        <div className="form-row">
+          <select
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(e.target.value)}
+            className="input-field"
+          >
+            <option value="">Semua Bulan</option>
+            {Array.from({length: 12}, (_, i) => (
+              <option key={i} value={i}>
+                {new Date(0, i).toLocaleDateString('id-ID', { month: 'long' })}
+              </option>
+            ))}
+          </select>
+          
+          <select
+            value={filterYear}
+            onChange={(e) => setFilterYear(e.target.value)}
+            className="input-field"
+          >
+            <option value="">Semua Tahun</option>
+            {Array.from({length: 10}, (_, i) => {
+              const year = new Date().getFullYear() - 2 + i;
+              return <option key={year} value={year}>{year}</option>;
+            })}
+          </select>
+        </div>
+      </div>
+
+      {/* Statistics */}
+      <div className="stats-grid-3">
+        <div className="stat-card stat-emerald">
+          <TrendingUp className="w-6 h-6" />
+          <div>
+            <p className="stat-value">{totalEntries}</p>
+            <p className="stat-label">Total Entry</p>
           </div>
         </div>
-
-        {/* Statistics */}
-        <div className="lg:col-span-3">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl p-4">
-              <div className="flex items-center space-x-3">
-                <TrendingUp className="w-8 h-8" />
-                <div>
-                  <p className="text-2xl font-bold">{totalEntries}</p>
-                  <p className="text-green-100">Total Entry</p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl p-4">
-              <div className="flex items-center space-x-3">
-                <Package className="w-8 h-8" />
-                <div>
-                  <p className="text-2xl font-bold">{totalProduction.toLocaleString()}</p>
-                  <p className="text-blue-100">Total Produksi</p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-xl p-4">
-              <div className="flex items-center space-x-3">
-                <Award className="w-8 h-8" />
-                <div>
-                  <p className="text-2xl font-bold">{formatCurrency(totalBonus)}</p>
-                  <p className="text-purple-100">Total Bonus</p>
-                </div>
-              </div>
-            </div>
+        <div className="stat-card stat-blue">
+          <Package className="w-6 h-6" />
+          <div>
+            <p className="stat-value">{totalProduction.toLocaleString()}</p>
+            <p className="stat-label">Total Produksi</p>
+          </div>
+        </div>
+        <div className="stat-card stat-purple">
+          <Award className="w-6 h-6" />
+          <div>
+            <p className="stat-value">{formatCurrency(totalBonus)}</p>
+            <p className="stat-label">Total Bonus</p>
           </div>
         </div>
       </div>
 
       {/* Bonus Data List */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Data Bonus Harian</h3>
+      <div className="card animate-in">
+        <h3 className="card-title">Data Bonus Harian</h3>
         
         {dailyBonusData.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
-            <Package className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+          <div className="empty-state">
+            <Package className="w-12 h-12" />
             <p>Belum ada data produksi</p>
           </div>
         ) : (
-          <div className="space-y-4 max-h-96 overflow-y-auto">
+          <div className="bonus-list">
             {dailyBonusData.map((entry, index) => (
-              <div key={index} className="border border-gray-200 rounded-lg p-4">
-                <div className="flex justify-between items-center mb-3">
-                  <span className="font-medium text-gray-800">
-                    📅 {formatDate(entry.date)}
-                  </span>
-                  <span className="text-blue-600 font-semibold">
-                    📦 {entry.totalProduction.toLocaleString()} pcs
-                  </span>
+              <div key={index} className="bonus-item">
+                <div className="bonus-item-header">
+                  <span className="bonus-date">📅 {formatDate(entry.date)}</span>
+                  <span className="bonus-production">📦 {entry.totalProduction.toLocaleString()} pcs</span>
                 </div>
                 
                 {entry.bonus.total > 0 && (
-                  <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
-                      {entry.bonus.tier1 > 0 && (
-                        <div className="flex justify-between">
-                          <span>🥉 Tingkat 1:</span>
-                          <span>{formatCurrency(entry.bonus.tier1)}</span>
-                        </div>
-                      )}
-                      {entry.bonus.tier2 > 0 && (
-                        <div className="flex justify-between">
-                          <span>🥈 Tingkat 2:</span>
-                          <span>{formatCurrency(entry.bonus.tier2)}</span>
-                        </div>
-                      )}
-                      {entry.bonus.tier3 > 0 && (
-                        <div className="flex justify-between">
-                          <span>🥇 Tingkat 3:</span>
-                          <span>{formatCurrency(entry.bonus.tier3)}</span>
-                        </div>
-                      )}
-                    </div>
+                  <div className="bonus-tiers">
+                    {entry.bonus.tier1 > 0 && (
+                      <div className="bonus-tier-row">
+                        <span>🥉 Tingkat 1</span>
+                        <span>{formatCurrency(entry.bonus.tier1)}</span>
+                      </div>
+                    )}
+                    {entry.bonus.tier2 > 0 && (
+                      <div className="bonus-tier-row">
+                        <span>🥈 Tingkat 2</span>
+                        <span>{formatCurrency(entry.bonus.tier2)}</span>
+                      </div>
+                    )}
+                    {entry.bonus.tier3 > 0 && (
+                      <div className="bonus-tier-row">
+                        <span>🥇 Tingkat 3</span>
+                        <span>{formatCurrency(entry.bonus.tier3)}</span>
+                      </div>
+                    )}
                   </div>
                 )}
                 
-                <div className={`text-center py-2 px-4 rounded-lg font-semibold ${
-                  entry.bonus.total > 0 
-                    ? 'bg-green-100 text-green-800' 
-                    : 'bg-gray-100 text-gray-600'
-                }`}>
+                <div className={`bonus-total ${entry.bonus.total > 0 ? 'has-bonus' : ''}`}>
                   💰 Total Bonus: {formatCurrency(entry.bonus.total)}
                 </div>
               </div>
@@ -484,7 +493,7 @@ export default function BonusTab() {
         )}
       </div>
 
-      {/* Modern Bonus Popup */}
+      {/* Bonus Popup */}
       <BonusPopup
         isOpen={showBonusPopup}
         onClose={() => setShowBonusPopup(false)}

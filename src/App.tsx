@@ -8,6 +8,7 @@ import BonusTab from './components/BonusTab';
 import ProductionTab from './components/ProductionTab';
 import SalaryTab from './components/SalaryTab';
 import FormulaManager from './components/FormulaManager';
+import EmployeeManager from './components/EmployeeManager';
 import { FormulaProvider } from './context/FormulaContext';
 
 function AppContent() {
@@ -16,8 +17,9 @@ function AppContent() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="loading-screen">
+        <div className="spinner-lg" />
+        <p>Memuat...</p>
       </div>
     );
   }
@@ -34,6 +36,8 @@ function AppContent() {
         return user.role === 'owner' ? <ProductionTab /> : <BonusTab />;
       case 'salary':
         return user.role === 'owner' ? <SalaryTab /> : <BonusTab />;
+      case 'employees':
+        return user.role === 'owner' ? <EmployeeManager /> : <BonusTab />;
       case 'formulas':
         return user.role === 'owner' ? <FormulaManager /> : <BonusTab />;
       default:
@@ -42,13 +46,12 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="app-layout">
       <Header />
-      <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
-      
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="app-main">
         {renderTabContent()}
       </main>
+      <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
     </div>
   );
 }
