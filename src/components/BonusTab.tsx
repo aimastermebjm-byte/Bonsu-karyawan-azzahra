@@ -79,14 +79,12 @@ export default function BonusTab() {
       if (activeKaryawanId) {
         q = query(
           collection(db, "produksi"),
-          where("karyawanId", "==", activeKaryawanId),
-          orderBy("createdAt", "desc")
+          where("karyawanId", "==", activeKaryawanId)
         );
       } else if (!isOwner && user?.karyawanId) {
         q = query(
           collection(db, "produksi"),
-          where("karyawanId", "==", user.karyawanId),
-          orderBy("createdAt", "desc")
+          where("karyawanId", "==", user.karyawanId)
         );
       } else {
         q = query(collection(db, "produksi"), orderBy("createdAt", "desc"));
