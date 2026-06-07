@@ -138,6 +138,32 @@ export default function ProductionTab() {
   const totalBoxTypes = new Set(filteredData.map(entry => entry.boxSize)).size;
   const totalBoxes = filteredData.reduce((sum, entry) => sum + entry.production, 0);
 
+  // Grouping logic for rendering
+  const groupedData: Record<string, {
+    date: string;
+    karyawanId: string;
+    karyawanNama: string;
+    totalProduction: number;
+    entries: ProductionEntry[];
+  }> = {};
+
+  filteredData.forEach(entry => {
+    const key = `${entry.date}_${entry.karyawanId}`;
+    if (!groupedData[key]) {
+      groupedData[key] = {
+        date: entry.date,
+        karyawanId: entry.karyawanId,
+        karyawanNama: entry.karyawanNama || '',
+        totalProduction: 0,
+        entries: []
+      };
+    }
+    groupedData[key].entries.push(entry);
+    groupedData[key].totalProduction += entry.production;
+  });
+  
+  const sortedGroupedData = Object.values(groupedData).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
   return (
     <div className="content-section">
       {/* Header */}
@@ -226,73 +252,86 @@ export default function ProductionTab() {
             <div className="spinner-lg" />
             <span>Memuat data...</span>
           </div>
-        ) : filteredData.length === 0 ? (
+        ) : sortedGroupedData.length === 0 ? (
           <div className="empty-state">
             <Package className="w-12 h-12" />
             <p>Belum ada data produksi</p>
           </div>
         ) : (
           <div className="production-list">
-            {filteredData.map((entry) => (
-              <div key={entry.id} className={`production-item ${editingId === entry.id ? 'editing' : ''}`}>
-                {editingId === entry.id ? (
-                  <div className="production-edit-form">
-                    <input
-                      type="date"
-                      value={editForm.date}
-                      onChange={(e) => setEditForm({...editForm, date: e.target.value})}
-                      className="input-field"
-                    />
-                    <select
-                      value={editForm.boxSize}
-                      onChange={(e) => setEditForm({...editForm, boxSize: e.target.value})}
-                      className="input-field"
-                    >
-                      <option value="">Pilih Ukuran</option>
-                      {boxSizes.map(size => (
-                        <option key={size} value={size}>{size}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      value={editForm.production}
-                      onChange={(e) => setEditForm({...editForm, production: e.target.value})}
-                      min="1"
-                      className="input-field"
-                    />
-                    <div className="production-edit-actions">
-                      <button onClick={handleSaveEdit} className="action-btn action-success">
-                        <Save className="w-4 h-4" /> Simpan
-                      </button>
-                      <button onClick={handleCancelEdit} className="action-btn">
-                        <X className="w-4 h-4" /> Batal
-                      </button>
+            {sortedGroupedData.map((group, gIndex) => (
+              <div key={gIndex} className="production-item">
+                <div className="production-item-top" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '12px', marginBottom: '12px' }}>
+                  <span className="production-date">{formatDate(group.date)}</span>
+                  {group.karyawanNama && (
+                    <span className="production-karyawan">{group.karyawanNama}</span>
+                  )}
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {group.entries.map((entry) => (
+                    <div key={entry.id} className={editingId === entry.id ? 'editing' : ''}>
+                      {editingId === entry.id ? (
+                        <div className="production-edit-form" style={{ background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                          <input
+                            type="date"
+                            value={editForm.date}
+                            onChange={(e) => setEditForm({...editForm, date: e.target.value})}
+                            className="input-field"
+                            style={{ marginBottom: '12px' }}
+                          />
+                          <select
+                            value={editForm.boxSize}
+                            onChange={(e) => setEditForm({...editForm, boxSize: e.target.value})}
+                            className="input-field"
+                            style={{ marginBottom: '12px' }}
+                          >
+                            <option value="">Pilih Ukuran</option>
+                            {boxSizes.map(size => (
+                              <option key={size} value={size}>{size}</option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            value={editForm.production}
+                            onChange={(e) => setEditForm({...editForm, production: e.target.value})}
+                            min="1"
+                            className="input-field"
+                            style={{ marginBottom: '16px' }}
+                          />
+                          <div className="production-edit-actions" style={{ display: 'flex', gap: '12px', borderTop: 'none', padding: 0, margin: 0 }}>
+                            <button onClick={handleSaveEdit} className="btn-success" style={{ flex: 1, padding: '10px' }}>
+                              <Save className="w-4 h-4" /> Simpan
+                            </button>
+                            <button onClick={handleCancelEdit} className="action-btn" style={{ flex: 1, padding: '10px' }}>
+                              <X className="w-4 h-4" /> Batal
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '12px 16px', borderRadius: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            <span className="production-box-badge">{entry.boxSize}</span>
+                            <span className="production-qty" style={{ fontSize: '15px' }}>{entry.production.toLocaleString()} pcs</span>
+                          </div>
+                          <div className="production-item-actions" style={{ margin: 0, padding: 0, border: 'none' }}>
+                            <button onClick={() => handleEdit(entry)} className="action-btn action-edit" title="Edit" style={{ padding: '8px' }}>
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => handleDelete(entry.id)} className="action-btn action-danger" title="Hapus" style={{ padding: '8px' }}>
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="production-item-content">
-                      <div className="production-item-top">
-                        <span className="production-date">{formatDate(entry.date)}</span>
-                        {entry.karyawanNama && (
-                          <span className="production-karyawan">{entry.karyawanNama}</span>
-                        )}
-                      </div>
-                      <div className="production-item-bottom">
-                        <span className="production-box-badge">{entry.boxSize}</span>
-                        <span className="production-qty">{entry.production.toLocaleString()} pcs</span>
-                      </div>
-                    </div>
-                    <div className="production-item-actions">
-                      <button onClick={() => handleEdit(entry)} className="action-btn action-edit" title="Edit">
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => handleDelete(entry.id)} className="action-btn action-danger" title="Hapus">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </>
-                )}
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Hari Ini</span>
+                  <span style={{ fontSize: '18px', fontWeight: 900, color: 'var(--accent-light)' }}>{group.totalProduction.toLocaleString()} pcs</span>
+                </div>
               </div>
             ))}
           </div>
