@@ -23,6 +23,7 @@ export default function BonusTab() {
   const [production, setProduction] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [dailyBonusData, setDailyBonusData] = useState<DailyBonusData[]>([]);
+  const [summaryStats, setSummaryStats] = useState({ todayProd: 0, todayBonus: 0, monthProd: 0, monthBonus: 0 });
   const { formulas, defaultFormula, setDefaultFormula } = useFormula();
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth().toString());
   const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString());
@@ -126,6 +127,48 @@ export default function BonusTab() {
       });
 
       setDailyBonusData(bonusData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+
+      // Calculate absolute Today and This Month stats (ignoring UI filter)
+      const todayDate = new Date();
+      // Use local timezone to get today's date string matching input type="date"
+      const offset = todayDate.getTimezoneOffset() * 60000;
+      const todayStr = new Date(todayDate.getTime() - offset).toISOString().split('T')[0];
+      const currentMonth = todayDate.getMonth();
+      const currentYear = todayDate.getFullYear();
+      
+      const todayTotalsMap: Record<string, number> = {};
+      const monthTotalsMap: Record<string, number> = {};
+
+      data.forEach(entry => {
+        const entryDate = new Date(entry.date);
+        
+        // Today
+        if (entry.date === todayStr) {
+           if(!todayTotalsMap[entry.date]) todayTotalsMap[entry.date] = 0;
+           todayTotalsMap[entry.date] += entry.production;
+        }
+
+        // This month
+        if (entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear) {
+           if(!monthTotalsMap[entry.date]) monthTotalsMap[entry.date] = 0;
+           monthTotalsMap[entry.date] += entry.production;
+        }
+      });
+
+      let tProd = 0; let tBonus = 0;
+      Object.keys(todayTotalsMap).forEach(d => {
+        tProd += todayTotalsMap[d];
+        tBonus += calculateBonus(todayTotalsMap[d], formulaToUse).total;
+      });
+
+      let mProd = 0; let mBonus = 0;
+      Object.keys(monthTotalsMap).forEach(d => {
+        mProd += monthTotalsMap[d];
+        mBonus += calculateBonus(monthTotalsMap[d], formulaToUse).total;
+      });
+
+      setSummaryStats({ todayProd: tProd, todayBonus: tBonus, monthProd: mProd, monthBonus: mBonus });
+
     } catch (error) {
       console.error("Error loading bonus data:", error);
     }
@@ -223,11 +266,7 @@ export default function BonusTab() {
     }
   };
 
-  // Statistics
-  const totalEntries = dailyBonusData.length;
-  const totalProduction = dailyBonusData.reduce((sum, entry) => sum + entry.totalProduction, 0);
-  const totalBonus = dailyBonusData.reduce((sum, entry) => sum + entry.bonus.total, 0);
-
+  // UI Variables
   const currentDisplayFormula = previewFormulaId ? formulas.find(f => f.id === previewFormulaId) : defaultFormula;
   const isPreviewMode = previewFormulaId !== null;
 
@@ -419,26 +458,33 @@ export default function BonusTab() {
       </div>
 
       {/* Statistics */}
-      <div className="stats-grid-3">
+      <div className="stats-grid-4">
         <div className="stat-card stat-emerald">
-          <TrendingUp className="w-6 h-6" />
+          <Calendar className="w-5 h-5" />
           <div>
-            <p className="stat-value">{totalEntries}</p>
-            <p className="stat-label">Total Entry</p>
+            <p className="stat-value">{summaryStats.todayProd.toLocaleString()}</p>
+            <p className="stat-label">Produksi Hari Ini</p>
           </div>
         </div>
         <div className="stat-card stat-blue">
-          <Package className="w-6 h-6" />
+          <Award className="w-5 h-5" />
           <div>
-            <p className="stat-value">{totalProduction.toLocaleString()}</p>
-            <p className="stat-label">Total Produksi</p>
+            <p className="stat-value">{formatCurrency(summaryStats.todayBonus)}</p>
+            <p className="stat-label">Bonus Hari Ini</p>
           </div>
         </div>
         <div className="stat-card stat-purple">
-          <Award className="w-6 h-6" />
+          <Package className="w-5 h-5" />
           <div>
-            <p className="stat-value">{formatCurrency(totalBonus)}</p>
-            <p className="stat-label">Total Bonus</p>
+            <p className="stat-value">{summaryStats.monthProd.toLocaleString()}</p>
+            <p className="stat-label">Produksi Bulan Ini</p>
+          </div>
+        </div>
+        <div className="stat-card stat-indigo">
+          <TrendingUp className="w-5 h-5" />
+          <div>
+            <p className="stat-value">{formatCurrency(summaryStats.monthBonus)}</p>
+            <p className="stat-label">Bonus Bulan Ini</p>
           </div>
         </div>
       </div>
