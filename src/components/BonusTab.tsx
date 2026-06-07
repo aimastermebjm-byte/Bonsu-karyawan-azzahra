@@ -110,20 +110,33 @@ export default function BonusTab() {
         });
       }
 
-      // Group by date and calculate daily totals
-      const dailyTotals: Record<string, number> = {};
+      // Group by date AND karyawanId to correctly calculate per-employee bonus
+      const dailyKaryawanTotals: Record<string, Record<string, number>> = {};
       filteredData.forEach(entry => {
-        if (!dailyTotals[entry.date]) {
-          dailyTotals[entry.date] = 0;
+        if (!dailyKaryawanTotals[entry.date]) {
+          dailyKaryawanTotals[entry.date] = {};
         }
-        dailyTotals[entry.date] += entry.production;
+        if (!dailyKaryawanTotals[entry.date][entry.karyawanId]) {
+          dailyKaryawanTotals[entry.date][entry.karyawanId] = 0;
+        }
+        dailyKaryawanTotals[entry.date][entry.karyawanId] += entry.production;
       });
 
       // Calculate bonus for each day
-      const bonusData = Object.keys(dailyTotals).map(date => {
-        const totalProduction = dailyTotals[date];
-        const bonus = calculateBonus(totalProduction, formulaToUse);
-        return { date, totalProduction, bonus };
+      const bonusData = Object.keys(dailyKaryawanTotals).map(date => {
+        let totalDailyProduction = 0;
+        let totalDailyBonus = { total: 0, tier1: 0, tier2: 0, tier3: 0 };
+
+        Object.values(dailyKaryawanTotals[date]).forEach(kProd => {
+          totalDailyProduction += kProd;
+          const kBonus = calculateBonus(kProd, formulaToUse);
+          totalDailyBonus.total += kBonus.total;
+          totalDailyBonus.tier1 += kBonus.tier1;
+          totalDailyBonus.tier2 += kBonus.tier2;
+          totalDailyBonus.tier3 += kBonus.tier3;
+        });
+
+        return { date, totalProduction: totalDailyProduction, bonus: totalDailyBonus };
       });
 
       setDailyBonusData(bonusData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
@@ -136,35 +149,35 @@ export default function BonusTab() {
       const currentMonth = todayDate.getMonth();
       const currentYear = todayDate.getFullYear();
       
-      const todayTotalsMap: Record<string, number> = {};
-      const monthTotalsMap: Record<string, number> = {};
-
-      data.forEach(entry => {
-        const entryDate = new Date(entry.date);
-        
-        // Today
-        if (entry.date === todayStr) {
-           if(!todayTotalsMap[entry.date]) todayTotalsMap[entry.date] = 0;
-           todayTotalsMap[entry.date] += entry.production;
-        }
-
-        // This month
-        if (entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear) {
-           if(!monthTotalsMap[entry.date]) monthTotalsMap[entry.date] = 0;
-           monthTotalsMap[entry.date] += entry.production;
-        }
-      });
-
       let tProd = 0; let tBonus = 0;
-      Object.keys(todayTotalsMap).forEach(d => {
-        tProd += todayTotalsMap[d];
-        tBonus += calculateBonus(todayTotalsMap[d], formulaToUse).total;
+      let mProd = 0; let mBonus = 0;
+
+      // Group raw data by date AND karyawanId to avoid false company-wide threshold triggers
+      const rawDailyKaryawanTotals: Record<string, Record<string, number>> = {};
+      data.forEach(entry => {
+        if (!rawDailyKaryawanTotals[entry.date]) rawDailyKaryawanTotals[entry.date] = {};
+        if (!rawDailyKaryawanTotals[entry.date][entry.karyawanId]) rawDailyKaryawanTotals[entry.date][entry.karyawanId] = 0;
+        rawDailyKaryawanTotals[entry.date][entry.karyawanId] += entry.production;
       });
 
-      let mProd = 0; let mBonus = 0;
-      Object.keys(monthTotalsMap).forEach(d => {
-        mProd += monthTotalsMap[d];
-        mBonus += calculateBonus(monthTotalsMap[d], formulaToUse).total;
+      Object.keys(rawDailyKaryawanTotals).forEach(d => {
+        const entryDate = new Date(d);
+        const isToday = d === todayStr;
+        const isThisMonth = entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear;
+
+        if (isToday || isThisMonth) {
+          Object.values(rawDailyKaryawanTotals[d]).forEach(kProd => {
+            const kBonus = calculateBonus(kProd, formulaToUse).total;
+            if (isToday) {
+              tProd += kProd;
+              tBonus += kBonus;
+            }
+            if (isThisMonth) {
+              mProd += kProd;
+              mBonus += kBonus;
+            }
+          });
+        }
       });
 
       setSummaryStats({ todayProd: tProd, todayBonus: tBonus, monthProd: mProd, monthBonus: mBonus });
