@@ -1,12 +1,12 @@
 import React from 'react';
-import { BarChart3, Package, DollarSign, Settings, Users } from 'lucide-react';
+import { Home, Box, Wallet, Settings, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface Tab {
   id: string;
   name: string;
   shortName: string;
-  icon: React.ReactNode;
+  icon: (isActive: boolean) => React.ReactNode;
   requiresOwner?: boolean;
 }
 
@@ -18,36 +18,36 @@ interface TabNavigationProps {
 const tabs: Tab[] = [
   {
     id: 'bonus',
-    name: 'Input Bonus',
-    shortName: 'Bonus',
-    icon: <BarChart3 className="w-5 h-5" />,
+    name: 'Beranda',
+    shortName: 'Beranda',
+    icon: (isActive) => <Home className="w-6 h-6" fill={isActive ? 'currentColor' : 'none'} strokeWidth={isActive ? 2 : 1.5} />,
   },
   {
     id: 'production',
     name: 'Data Produksi',
     shortName: 'Produksi',
-    icon: <Package className="w-5 h-5" />,
+    icon: (isActive) => <Box className="w-6 h-6" fill={isActive ? 'currentColor' : 'none'} strokeWidth={isActive ? 2 : 1.5} />,
     requiresOwner: true,
   },
   {
     id: 'salary',
     name: 'Gaji Karyawan',
     shortName: 'Gaji',
-    icon: <DollarSign className="w-5 h-5" />,
+    icon: (isActive) => <Wallet className="w-6 h-6" fill={isActive ? 'currentColor' : 'none'} strokeWidth={isActive ? 2 : 1.5} />,
     requiresOwner: true,
   },
   {
     id: 'employees',
     name: 'Kelola Karyawan',
     shortName: 'Karyawan',
-    icon: <Users className="w-5 h-5" />,
+    icon: (isActive) => <Users className="w-6 h-6" fill={isActive ? 'currentColor' : 'none'} strokeWidth={isActive ? 2 : 1.5} />,
     requiresOwner: true,
   },
   {
     id: 'formulas',
     name: 'Atur Formula',
     shortName: 'Formula',
-    icon: <Settings className="w-5 h-5" />,
+    icon: (isActive) => <Settings className="w-6 h-6" fill={isActive ? 'currentColor' : 'none'} strokeWidth={isActive ? 2 : 1.5} />,
     requiresOwner: true,
   },
 ];
@@ -75,7 +75,7 @@ export default function TabNavigation({ activeTab, onTabChange }: TabNavigationP
               onClick={() => onTabChange(tab.id)}
               className={`bottom-nav-item ${isActive ? 'active' : ''}`}
             >
-              <span className="bottom-nav-icon">{tab.icon}</span>
+              <span className="bottom-nav-icon">{tab.icon(isActive)}</span>
               <span className="bottom-nav-label">{tab.shortName}</span>
             </button>
           );
