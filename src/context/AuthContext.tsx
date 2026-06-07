@@ -29,19 +29,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (firebaseUser) {
         const email = firebaseUser.email || '';
-        let role: UserRole = 'employee';
-        
         // Cek apakah email yang login adalah email owner
         const ownerEmail = import.meta.env.VITE_OWNER_EMAIL;
         
         if (ownerEmail && email.toLowerCase() === ownerEmail.toLowerCase()) {
-          role = 'owner';
+          setUser({
+            name: firebaseUser.displayName || email.split('@')[0] || 'Owner',
+            role: 'owner',
+          });
+        } else {
+          // Jika login Google tapi BUKAN email owner, TOLAK AKSES!
+          alert('❌ Akses Ditolak: Login Google HANYA diizinkan untuk Owner aplikasi.');
+          signOut(auth);
+          setUser(null);
         }
-        
-        setUser({
-          name: firebaseUser.displayName || email.split('@')[0] || 'User',
-          role: role,
-        });
       } else {
         if (!isEmployeeLogin) {
           setUser(null);
