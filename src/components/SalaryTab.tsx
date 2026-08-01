@@ -58,8 +58,7 @@ export default function SalaryTab() {
     try {
       const q = query(
         collection(db, "produksi"),
-        where("karyawanId", "==", selectedKaryawanId),
-        orderBy("createdAt", "desc")
+        where("karyawanId", "==", selectedKaryawanId)
       );
       const querySnapshot = await getDocs(q);
       let data: ProductionEntry[] = [];
@@ -68,10 +67,14 @@ export default function SalaryTab() {
         data.push({ id: doc.id, ...doc.data() } as ProductionEntry);
       });
 
-      // Filter by selected month and year
+      // Filter by selected month and year safely using string splitting
       const monthlyData = data.filter(entry => {
-        const entryDate = new Date(entry.date);
-        return entryDate.getMonth() === selectedMonth && entryDate.getFullYear() === selectedYear;
+        if (!entry.date) return false;
+        const parts = entry.date.split('-');
+        if (parts.length < 2) return false;
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        return m === selectedMonth && y === selectedYear;
       });
 
       // Group by date and calculate daily totals
