@@ -1,0 +1,28 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+  
+    // 1. Koleksi Karyawan: Siapapun boleh BACA untuk mengecek nama & password.
+    match /karyawan/{karyawanId} {
+      allow read: if true; 
+      allow write: if request.auth != null;
+    }
+    
+    // 2. Koleksi Formulas: Untuk perhitungan gaji & bonus.
+    match /formulas/{formulaId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // 3. Koleksi Produksi: Agar karyawan bisa menambahkan hasil kerja.
+    match /produksi/{produksiId} {
+      allow read, write: if true;
+    }
+    
+    // 4. Default rules untuk tabel lainnya
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

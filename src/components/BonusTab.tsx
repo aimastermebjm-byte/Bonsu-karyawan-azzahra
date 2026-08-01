@@ -15,6 +15,11 @@ const boxSizes = [
   '18.11.11', '20.11.11', '20.15.10', '20.20.15', '30.11.11', '8.8.15'
 ];
 
+const monthNames = [
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+];
+
 export default function BonusTab() {
   const { user } = useAuth();
   const { isConnected } = useFirebase();
@@ -97,13 +102,17 @@ export default function BonusTab() {
         data.push({ id: doc.id, ...doc.data() } as ProductionEntry);
       });
 
-      // Filter by month and year
+      // Filter by month and year using safe string splitting
       let filteredData = data;
       if (filterMonth !== "" || filterYear !== "") {
         filteredData = data.filter(entry => {
-          const entryDate = new Date(entry.date);
-          const monthMatch = filterMonth === "" || entryDate.getMonth() === parseInt(filterMonth);
-          const yearMatch = filterYear === "" || entryDate.getFullYear() === parseInt(filterYear);
+          if (!entry.date) return false;
+          const parts = entry.date.split('-');
+          if (parts.length < 2) return false;
+          const y = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10) - 1;
+          const monthMatch = filterMonth === "" || m === parseInt(filterMonth, 10);
+          const yearMatch = filterYear === "" || y === parseInt(filterYear, 10);
           return monthMatch && yearMatch;
         });
       }
@@ -137,45 +146,39 @@ export default function BonusTab() {
         return { date, totalProduction: totalDailyProduction, bonus: totalDailyBonus };
       });
 
-      setDailyBonusData(bonusData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+      const sortedBonusData = bonusData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setDailyBonusData(sortedBonusData);
 
-      // Calculate absolute Today and This Month stats (ignoring UI filter)
-      const todayDate = new Date();
-      // Use local timezone to get today's date string matching input type="date"
-      const offset = todayDate.getTimezoneOffset() * 60000;
-      const todayStr = new Date(todayDate.getTime() - offset).toISOString().split('T')[0];
-      const currentMonth = todayDate.getMonth();
-      const currentYear = todayDate.getFullYear();
-      
-      let tProd = 0; let tBonus = 0;
-      let mProd = 0; let mBonus = 0;
+      // Today's Date String (local YYYY-MM-DD)
+      const now = new Date();
+      const localYear = now.getFullYear();
+      const localMonth = String(now.getMonth() + 1).padStart(2, '0');
+      const localDay = String(now.getDate()).padStart(2, '0');
+      const todayStr = `${localYear}-${localMonth}-${localDay}`;
 
-      // Group raw data by date AND karyawanId to avoid false company-wide threshold triggers
-      const rawDailyKaryawanTotals: Record<string, Record<string, number>> = {};
+      // Calculate Today's stats from raw data
+      let tProd = 0;
+      let tBonus = 0;
+      const todayDailyKaryawanTotals: Record<string, number> = {};
       data.forEach(entry => {
-        if (!rawDailyKaryawanTotals[entry.date]) rawDailyKaryawanTotals[entry.date] = {};
-        if (!rawDailyKaryawanTotals[entry.date][entry.karyawanId]) rawDailyKaryawanTotals[entry.date][entry.karyawanId] = 0;
-        rawDailyKaryawanTotals[entry.date][entry.karyawanId] += entry.production;
+        if (entry.date === todayStr) {
+          if (!todayDailyKaryawanTotals[entry.karyawanId]) {
+            todayDailyKaryawanTotals[entry.karyawanId] = 0;
+          }
+          todayDailyKaryawanTotals[entry.karyawanId] += entry.production;
+        }
+      });
+      Object.values(todayDailyKaryawanTotals).forEach(kProd => {
+        tProd += kProd;
+        tBonus += calculateBonus(kProd, formulaToUse).total;
       });
 
-      Object.keys(rawDailyKaryawanTotals).forEach(d => {
-        const entryDate = new Date(d);
-        const isToday = d === todayStr;
-        const isThisMonth = entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear;
-
-        if (isToday || isThisMonth) {
-          Object.values(rawDailyKaryawanTotals[d]).forEach(kProd => {
-            const kBonus = calculateBonus(kProd, formulaToUse).total;
-            if (isToday) {
-              tProd += kProd;
-              tBonus += kBonus;
-            }
-            if (isThisMonth) {
-              mProd += kProd;
-              mBonus += kBonus;
-            }
-          });
-        }
+      // Calculate Filtered Month stats (sum of all days in sortedBonusData)
+      let mProd = 0;
+      let mBonus = 0;
+      sortedBonusData.forEach(item => {
+        mProd += item.totalProduction;
+        mBonus += item.bonus.total;
       });
 
       setSummaryStats({ todayProd: tProd, todayBonus: tBonus, monthProd: mProd, monthBonus: mBonus });
@@ -488,14 +491,22 @@ export default function BonusTab() {
           <Package className="w-5 h-5" />
           <div>
             <p className="stat-value">{summaryStats.monthProd.toLocaleString()}</p>
-            <p className="stat-label">Produksi Bulan Ini</p>
+            <p className="stat-label">
+              {filterMonth !== "" 
+                ? `Produksi ${monthNames[parseInt(filterMonth, 10)]}` 
+                : 'Total Produksi'}
+            </p>
           </div>
         </div>
         <div className="stat-card stat-indigo">
           <TrendingUp className="w-5 h-5" />
           <div>
             <p className="stat-value">{formatCurrency(summaryStats.monthBonus)}</p>
-            <p className="stat-label">Bonus Bulan Ini</p>
+            <p className="stat-label">
+              {filterMonth !== "" 
+                ? `Bonus ${monthNames[parseInt(filterMonth, 10)]}` 
+                : 'Total Bonus'}
+            </p>
           </div>
         </div>
       </div>

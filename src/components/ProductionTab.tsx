@@ -69,9 +69,13 @@ export default function ProductionTab() {
     
     if (filterMonth !== "" || filterYear !== "") {
       filtered = filtered.filter(entry => {
-        const entryDate = new Date(entry.date);
-        const monthMatch = filterMonth === "" || entryDate.getMonth() === parseInt(filterMonth);
-        const yearMatch = filterYear === "" || entryDate.getFullYear() === parseInt(filterYear);
+        if (!entry.date) return false;
+        const parts = entry.date.split('-');
+        if (parts.length < 2) return false;
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        const monthMatch = filterMonth === "" || m === parseInt(filterMonth, 10);
+        const yearMatch = filterYear === "" || y === parseInt(filterYear, 10);
         return monthMatch && yearMatch;
       });
     }
